@@ -3,8 +3,10 @@ package org.akrck02.godot.plugin.nfc
 import android.app.PendingIntent
 import android.content.Intent
 import android.content.IntentFilter
+import android.nfc.NdefMessage
+import android.nfc.NdefRecord
 import android.nfc.NfcAdapter
-import android.nfc.Tag
+import android.nfc.tech.NfcA
 import android.os.Build
 import android.os.Bundle
 import android.os.Parcelable
@@ -12,7 +14,6 @@ import android.util.Log
 import android.widget.Toast
 import androidx.core.app.OnNewIntentProvider
 import org.godotengine.godot.Godot
-import org.godotengine.godot.GodotFragment
 import org.godotengine.godot.plugin.GodotPlugin
 import org.godotengine.godot.plugin.SignalInfo
 import org.godotengine.godot.plugin.UsedByGodot
@@ -20,6 +21,7 @@ import org.godotengine.godot.plugin.UsedByGodot
 
 class PluginNFC(godot: Godot): GodotPlugin(godot) {
 
+    private val TAG : String = "NfcPlugin"
     private var previousIntent: Intent? = null
 
     private var nfcAdapter: NfcAdapter? = null
@@ -71,8 +73,9 @@ class PluginNFC(godot: Godot): GodotPlugin(godot) {
                     IntentFilter(NfcAdapter.ACTION_TECH_DISCOVERED)
                 )
 
-                val pendingIntent = PendingIntent.getActivity(activity, 0, intent, PendingIntent.FLAG_IMMUTABLE)
-                it.enableForegroundDispatch(activity, pendingIntent, intentFilters, null)
+                val techListsArray = arrayOf(arrayOf(NfcA::class.java.name))
+                val pendingIntent = PendingIntent.getActivity(activity, 0, intent, PendingIntent.FLAG_MUTABLE)
+                it.enableForegroundDispatch(activity, pendingIntent, intentFilters, techListsArray)
             }
 
             Toast.makeText(activity, "NFC World $status", Toast.LENGTH_LONG).show()
@@ -87,25 +90,101 @@ class PluginNFC(godot: Godot): GodotPlugin(godot) {
      */
     @UsedByGodot
     fun setNfcCallback() {
+
         val currentActivity = activity as OnNewIntentProvider
         currentActivity.addOnNewIntentListener { currentIntent ->
             run {
-                if (currentIntent.hasExtra(NfcAdapter.EXTRA_NDEF_MESSAGES)) {
-                    val messages = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        currentIntent.getParcelableExtra(NfcAdapter.EXTRA_NDEF_MESSAGES, Tag::class.java)
-                    } else {
-                        currentIntent.getParcelableExtra(NfcAdapter.EXTRA_NDEF_MESSAGES)
-                    }
+                Log.d("NFC", intentToString(currentIntent))
 
-                    Log.d("NFC", "MESSAGES FOUND $messages")
+                if (NfcAdapter.ACTION_TAG_DISCOVERED == currentIntent.action || NfcAdapter.ACTION_TECH_DISCOVERED == currentIntent.action) {
+                    Log.d("NFC", "Tag Intent received.")
 
-                    messages?.let {
-                        Log.d("NFC", "NFC tag detected: $messages")
-                        emitSignal("tag_readed", messages)
+                    val msgs: Array<NdefMessage?> = getNdefMessagesFromIntent(currentIntent)
+                    msgs.let {
+                        Log.d("NFC", "NFC tag detected")
+                        // emitSignal("tag_readed", msgs[0]?.toByteArray())
                     }
                 }
-
             }
         }
     }
+
+    private fun getNdefMessagesFromIntent(intent: Intent): Array<NdefMessage?> {
+
+        // Parse the intent
+        var msgs: Array<NdefMessage?> = arrayOf()
+        val action = intent.action
+        if (action == NfcAdapter.ACTION_TAG_DISCOVERED || action == NfcAdapter.ACTION_NDEF_DISCOVERED) {
+            val rawMsgs = intent.getParcelableArrayExtra(NfcAdapter.EXTRA_NDEF_MESSAGES)
+            if (rawMsgs != null) {
+                msgs = arrayOfNulls(rawMsgs.size)
+                for (i in rawMsgs.indices) {
+                    msgs[i] = rawMsgs[i] as NdefMessage
+                }
+            } else {
+                // Unknown tag type
+                val empty = byteArrayOf()
+                val record = NdefRecord(NdefRecord.TNF_UNKNOWN, empty, empty, empty)
+                val msg = NdefMessage(arrayOf(record))
+                msgs = arrayOf(msg)
+            }
+        } else {
+            Log.e(TAG, "Unknown intent.")
+        }
+
+        return msgs
+    }
+
+    private fun intentToString(intent: Intent?): String {
+        if (intent == null) {
+            return "null"
+        }
+        return intent.toString() + " " + bundleToString(intent.extras)
+    }
+
+    private fun bundleToString(bundle: Bundle?): String {
+        val out = java.lang.StringBuilder("Bundle[")
+        if (bundle == null) {
+            out.append("null")
+        } else {
+            var first = true
+            for (key in bundle.keySet()) {
+                if (!first) {
+                    out.append(", ")
+                }
+                out.append(key).append('=')
+                val value = bundle[key]
+                if (value is IntArray) {
+                    out.append(value.contentToString())
+                } else if (value is ByteArray) {
+                    out.append(value.contentToString())
+                } else if (value is BooleanArray) {
+                    out.append(value.contentToString())
+                } else if (value is ShortArray) {
+                    out.append(value.contentToString())
+                } else if (value is LongArray) {
+                    out.append(value.contentToString())
+                } else if (value is FloatArray) {
+                    out.append(value.contentToString())
+                } else if (value is DoubleArray) {
+                    out.append(value.contentToString())
+                } else if (value is Array<*> && value.isArrayOf<String>()) {
+                    out.append((value as Array<String?>).contentToString())
+                } else if (value is Array<*> && value.isArrayOf<CharSequence>()) {
+                    out.append((value as Array<CharSequence?>).contentToString())
+                } else if (value is Array<*> && value.isArrayOf<Parcelable>()) {
+                    out.append((value as Array<Parcelable?>).contentToString())
+                } else if (value is Bundle) {
+                    out.append(bundleToString(value))
+                } else {
+                    out.append(value)
+                }
+                first = false
+            }
+        }
+        out.append("]")
+        return out.toString()
+    }
+
+
 }

@@ -10,6 +10,7 @@ func _ready():
 		_android_plugin.connect("nfc_enabled", _on_nfc_enabled)
 		_android_plugin.connect("tag_readed", _on_nfc_tag_readed)
 		_android_plugin.enableNFC()
+		_android_plugin.setNfcCallback()
 	else:
 		printerr("Couldn't find plugin " + _plugin_name)
 		
@@ -20,8 +21,3 @@ func _on_nfc_enabled(status) -> void:
 
 func _on_nfc_tag_readed(data) -> void:
 	$Control/Label.text +=  "NFC Read Data:%s\n" % data.get_string_from_utf8()
-
-
-func _process(delta: float) -> void:
-	if _android_plugin:
-		_android_plugin.pollTags()
